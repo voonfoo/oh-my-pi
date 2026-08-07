@@ -31,6 +31,22 @@ describe("error-id classification", () => {
 		expect(AIError.is(id, AIError.Flag.Class)).toBe(true);
 	});
 
+	it("classifies watchdog stall messages as timeout + transient from text alone", () => {
+		// The lazy-stream watchdog's persisted wording is "stalled", which the
+		// old `\bstream stall\b` timeout pattern never matched (boundary before
+		// "ed"), leaving resumed sessions without the Timeout flag.
+		for (const errorMessage of [
+			"Provider stream stalled while waiting for the next event",
+			"OpenAI completions stream stalled while waiting for the next event",
+			"Anthropic stream stalled while waiting for the next event",
+		]) {
+			const id = AIError.classifyMessage(message({ errorMessage }));
+			expect(AIError.is(id, AIError.Flag.Transient)).toBe(true);
+			expect(AIError.is(id, AIError.Flag.Timeout)).toBe(true);
+			expect(AIError.retriable(id)).toBe(true);
+		}
+	});
+
 	it("classifies OpenAI stream_read_error as transient", () => {
 		const assistant = message({
 			api: "openai-responses",

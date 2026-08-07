@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed lazy provider streams (Amazon Bedrock, Google, Cursor, Devin, Ollama) ignoring the model's catalog `compat.streamIdleTimeoutMs`, which pinned Bedrock reasoning models to the generic 300s idle watchdog and killed healthy-but-quiet plan-writing/todo-execution turns with `Provider stream stalled while waiting for the next event`; Bedrock ConverseStream sends no ping keepalives, so long thinking gaps read as dead streams ([#4758](https://github.com/can1357/oh-my-pi/issues/4758)).
+- Lazy-stream watchdog failures now carry the structural `errorId` classification (transient + timeout) onto the terminal assistant message instead of relying on error-message text matching, and the timeout text classifier recognizes the persisted "stream stalled" wording (previously only "stream stall" matched), so session-level auto-retry classifies these stalls reliably, including on resumed sessions.
+
 ## [17.2.10] - 2026-08-06
 
 ### Breaking Changes

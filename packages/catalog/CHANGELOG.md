@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Widened the Amazon Bedrock stream idle-timeout floor for reasoning models (600s, matching the GLM coding-plan floor) and for adaptive-thinking Claude — Opus 4.7+, Sonnet/Opus 5, and Fable/Mythos 5, where stalls were most frequent — to 900s, matching the tolerance direct Anthropic gets from ping keepalives. Bedrock ConverseStream sends no keepalive events, so long quiet reasoning stretches previously tripped the generic 300s watchdog with `Provider stream stalled while waiting for the next event` during plan writing and todo execution ([#4758](https://github.com/can1357/oh-my-pi/issues/4758)). Explicit `compat.streamIdleTimeoutMs` overrides still win (`0` disables the watchdog).
+
 ## [17.2.10] - 2026-08-06
 
 ### Changed

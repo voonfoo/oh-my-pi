@@ -1,21 +1,25 @@
 import { describe, expect, it } from "bun:test";
+import * as AIError from "@oh-my-pi/pi-ai/error";
 import { setBedrockProviderModule, streamBedrock } from "@oh-my-pi/pi-ai/providers/register-builtins";
 import type { AssistantMessage, Context, Model } from "@oh-my-pi/pi-ai/types";
 import type { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
-function createModel(): Model<"bedrock-converse-stream"> {
+function createModel(
+	overrides: { reasoning?: boolean; compat?: { streamIdleTimeoutMs?: number } } = {},
+): Model<"bedrock-converse-stream"> {
 	return buildModel({
 		id: "mock-bedrock",
 		name: "Mock Bedrock",
 		api: "bedrock-converse-stream",
 		provider: "amazon-bedrock",
 		baseUrl: "https://example.invalid",
-		reasoning: false,
+		reasoning: overrides.reasoning ?? false,
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 8192,
 		maxTokens: 2048,
+		compat: overrides.compat,
 	});
 }
 
@@ -125,6 +129,57 @@ describe("register-builtins lazy streams", () => {
 		expect(result).not.toBe("timeout");
 		if (result === "timeout") {
 			throw new Error("Timed out waiting for forwarded stream stall result");
+		}
+		expect(providerSignal?.aborted).toBe(true);
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("Provider stream stalled while waiting for the next event");
+		// The watchdog's StreamTimeoutError classification must survive onto the
+		// message so session-level auto-retry can classify it structurally.
+		expect(AIError.is(result.errorId, AIError.Flag.Transient)).toBe(true);
+		expect(AIError.is(result.errorId, AIError.Flag.Timeout)).toBe(true);
+		expect(AIError.retriable(result.errorId)).toBe(true);
+	});
+
+	it("honors model.compat.streamIdleTimeoutMs as the lazy watchdog fallback", async () => {
+		const partialMessage = createAssistantMessage("stop");
+		let providerSignal: AbortSignal | undefined;
+		const source = {
+			async *[Symbol.asyncIterator]() {
+				yield { type: "start", partial: partialMessage } as const;
+				yield { type: "text_delta", contentIndex: 0, delta: "hello", partial: partialMessage } as const;
+				const { promise, reject } = Promise.withResolvers<never>();
+				if (providerSignal?.aborted) {
+					reject(new Error("Request was aborted"));
+				}
+				providerSignal?.addEventListener("abort", () => reject(new Error("Request was aborted")), {
+					once: true,
+				});
+				await promise;
+			},
+		} as unknown as AssistantMessageEventStream;
+
+		setBedrockProviderModule({
+			streamBedrock: (_model, _context, options) => {
+				providerSignal = options.signal;
+				return source;
+			},
+		});
+
+		// No per-call option: the catalog compat override must reach the lazy
+		// watchdog (a stalled Bedrock stream previously waited the generic 300s
+		// default because model.compat was ignored on this path).
+		const model = createModel({ reasoning: true, compat: { streamIdleTimeoutMs: 20 } });
+		expect(model.compat.streamIdleTimeoutMs).toBe(20);
+		const stream = streamBedrock(model, baseContext, {});
+		// Real-clock race guard (matching this file's other lazy-stream tests):
+		// the lazy watchdog runs on the platform clock, so fake timers cannot
+		// drive it; the 20ms compat deadline settles the result long before the
+		// bound, which exists only to fail fast instead of hanging the test.
+		const result = await Promise.race([stream.result(), Bun.sleep(2_000).then(() => "timeout" as const)]);
+
+		expect(result).not.toBe("timeout");
+		if (result === "timeout") {
+			throw new Error("Timed out waiting for compat-driven stream stall result");
 		}
 		expect(providerSignal?.aborted).toBe(true);
 		expect(result.stopReason).toBe("error");
