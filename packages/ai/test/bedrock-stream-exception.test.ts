@@ -150,3 +150,25 @@ describe("Bedrock mid-stream exception status mapping", () => {
 		expect(AIError.retriable(AIError.classifyMessage(result))).toBe(true);
 	});
 });
+
+describe("Bedrock content_filtered stop reason", () => {
+	test("surfaces as a labeled refusal: stopDetails, content-blocked flag, non-retryable", async () => {
+		const frames = [
+			eventFrame("messageStart", { role: "assistant" }),
+			eventFrame("messageStop", { stopReason: "content_filtered" }),
+		];
+		const fetchImpl: FetchImpl = async () =>
+			new Response(bodyFrom(frames), {
+				status: 200,
+				headers: { "content-type": "application/vnd.amazon.eventstream" },
+			});
+		const stream = streamBedrock(model, context, { bearerToken: "test-token", fetch: fetchImpl });
+		const result = await stream.result();
+		expect(result.stopReason).toBe("error");
+		expect(result.stopDetails?.type).toBe("refusal");
+		expect(result.errorMessage).toMatch(/^Refusal/);
+		expect(result.errorMessage).toContain("content_filtered");
+		expect(AIError.is(result.errorId, AIError.Flag.ContentBlocked)).toBe(true);
+		expect(AIError.retriable(result.errorId)).toBe(false);
+	});
+});

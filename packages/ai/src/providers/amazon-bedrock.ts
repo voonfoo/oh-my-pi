@@ -530,7 +530,19 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
 						output.stopReason =
 							sentinelInjected && ev.stopReason === "tool_use" ? "stop" : mapStopReason(ev.stopReason);
 						if (output.stopReason === "error") {
-							output.errorMessage = `Generation failed with stop reason: ${ev.stopReason ?? "unknown"}`;
+							if (ev.stopReason === "content_filtered") {
+								// Bedrock Converse normalizes Anthropic's native `stop_reason: "refusal"`
+								// (Claude's safety classifier halting generation) to `content_filtered`.
+								// Mirror the direct Anthropic provider: label the refusal and set
+								// stopDetails so the agent's classifier-refusal handling applies.
+								// The raw token stays in the message so CONTENT_FILTER_PATTERN
+								// classifies it as ContentBlocked.
+								output.stopDetails = { type: "refusal" };
+								output.errorMessage =
+									"Refusal: response blocked by the model's safety classifier (Bedrock stop reason: content_filtered)";
+							} else {
+								output.errorMessage = `Generation failed with stop reason: ${ev.stopReason ?? "unknown"}`;
+							}
 						}
 						break;
 					}

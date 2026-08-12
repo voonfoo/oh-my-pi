@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed Amazon Bedrock mid-stream `internalServerException` failures (AWS's transient "Try your request again." server fault) surfacing as terminal errors instead of auto-retrying. All mid-stream eventstream exceptions were hardcoded to HTTP 400, which the retry classifier treats as a non-retryable client error; exception types now map to their real statuses (`internalServerException` → 500, `throttlingException` → 429, `serviceUnavailableException` → 503, `modelTimeoutException` → 408, `modelStreamErrorException` → upstream status), so server faults classify as transient and retry. This also stops these failures from being mis-filed as raw-request dumps under `http-400-requests/`.
+- Fixed Amazon Bedrock refusals (Converse stop reason `content_filtered`, Bedrock's spelling of Anthropic's native `refusal` stop) surfacing as the cryptic `Generation failed with stop reason: content_filtered` with no refusal metadata. The stream now labels them `Refusal: response blocked by the model's safety classifier`, sets `stopDetails: { type: "refusal" }` so the agent's classifier-refusal recovery applies, and the content-filter classifier recognizes the `content_filtered` spelling as `ContentBlocked`/non-retryable (including legacy persisted session messages).
 
 ## [17.2.14] - 2026-08-11
 

@@ -104,7 +104,7 @@ const AUTH_FAILURE_PATTERN =
 	/\b(?:401|403|unauthorized|forbidden|authentication|auth[_ ]?unavailable|no auth available|(?:invalid|no)[_ ]?api[_ ]?key)\b/i;
 const MALFORMED_FUNCTION_CALL_PATTERN = /\bmalformed.?function.?call\b/i;
 const PROVIDER_FINISH_ERROR_PATTERN = /\bProvider (?:returned error finish_reason|finish_reason:\s*error)\b/i;
-const CONTENT_FILTER_PATTERN = /\b(?:incomplete:\s*)?content_filter\b/i;
+const CONTENT_FILTER_PATTERN = /\b(?:incomplete:\s*)?content_filter(?:ed)?\b/i;
 const ACCOUNT_POLICY_PATTERN = /\bcyber_policy\b|trusted access for cyber/i;
 const STALE_RESPONSE_ITEM_PATTERNS = [/\bItem with id ['"][^'"]+['"] not found\.?/i, /previous[ _]?response/i] as const;
 const STALE_RESPONSE_ITEM_DETAIL_PATTERN = /not[ _]?found|invalid|expired|stale|zero[ _-]?data[ _-]?retention/i;

@@ -88,6 +88,16 @@ describe("error-id classification", () => {
 		expect(AIError.retriable(id)).toBe(false);
 	});
 
+	it("classifies Bedrock content_filtered stop-reason text as content-blocked", () => {
+		// Legacy persisted sessions carry this exact message; the classifier must
+		// flag it even without stopDetails (Bedrock spelling has a trailing "ed").
+		const id = AIError.classifyMessage({
+			errorMessage: "Generation failed with stop reason: content_filtered",
+		});
+		expect(AIError.is(id, AIError.Flag.ContentBlocked)).toBe(true);
+		expect(AIError.retriable(id)).toBe(false);
+	});
+
 	it("keeps raw status fallback unclassified", () => {
 		const id = 503;
 		expect(AIError.is(id, AIError.Flag.Class)).toBe(false);
