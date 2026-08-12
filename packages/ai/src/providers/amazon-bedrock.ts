@@ -477,15 +477,19 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
 
 				if (messageType === "exception") {
 					const exceptionType = message.headers[":exception-type"] || "Exception";
-					const payload = safeParsePayload(message.payload) as { message?: string } | undefined;
+					const payload = safeParsePayload(message.payload) as
+						| { message?: string; originalStatusCode?: number }
+						| undefined;
 					const errorMessage = payload?.message || new TextDecoder().decode(message.payload);
 					const text = `${exceptionType}: ${errorMessage}`;
-					throw new AIError.BedrockApiError(text, 400, { code: exceptionType });
+					throw new AIError.BedrockApiError(text, midStreamExceptionStatus(exceptionType, payload), {
+						code: exceptionType,
+					});
 				}
 				if (messageType === "error") {
 					const code = message.headers[":error-code"] || "UnknownError";
 					const errorMessage = message.headers[":error-message"] || new TextDecoder().decode(message.payload);
-					throw new AIError.BedrockApiError(`${code}: ${errorMessage}`, 400, { code });
+					throw new AIError.BedrockApiError(`${code}: ${errorMessage}`, 500, { code });
 				}
 				if (messageType !== "event") continue;
 
@@ -601,6 +605,38 @@ function safeParsePayload(payload: Uint8Array): unknown {
 		return JSON.parse(new TextDecoder().decode(payload));
 	} catch {
 		return undefined;
+	}
+}
+
+/**
+ * HTTP status for a mid-stream eventstream `exception` message. The stream only
+ * opens after the request validated (HTTP 200 handshake), so these arrive with
+ * no HTTP status of their own; the smithy exception type is the only signal.
+ * A wrong guess here is load-bearing: `classify()` treats 5xx as transient
+ * (auto-retry) and 4xx as terminal, so mapping a server fault like
+ * `internalServerException` to 400 turns a "Try your request again." into a
+ * hard turn failure.
+ *
+ * Statuses mirror the Bedrock ConverseStream API reference; `modelStreamError`
+ * relays the upstream model's own status when present (424 otherwise, matching
+ * the non-streaming ModelError). Unknown types default to 500: client faults
+ * reject before the stream opens, so an unrecognized mid-stream exception is
+ * almost certainly a server-side fault and retrying is the safe default.
+ */
+function midStreamExceptionStatus(exceptionType: string, payload?: { originalStatusCode?: number }): number {
+	switch (exceptionType) {
+		case "validationException":
+			return 400;
+		case "throttlingException":
+			return 429;
+		case "modelTimeoutException":
+			return 408;
+		case "serviceUnavailableException":
+			return 503;
+		case "modelStreamErrorException":
+			return payload?.originalStatusCode ?? 424;
+		default:
+			return 500;
 	}
 }
 
